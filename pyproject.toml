@@ -1,0 +1,26 @@
+[project]
+name = "ia_common"
+version = "0.1.0"
+description = "Shared image-analysis basis for new ia_* projects (CZI reading, coordinates, logging)."
+authors = [{ name = "Mike Stebler", email = "mstebler@ethz.ch" }]
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2",
+    # Zeiss' own CZI library. Chosen over aicspylibczi / bioio-czi 3.x, which
+    # return invalid memory (segfault) for 8-bit Airyscan CZIs — see README.
+    "pylibczirw>=6.1,<7",
+]
+
+[project.optional-dependencies]
+display = ["matplotlib>=3.9"]   # ia_common.display (scale bars, save_png)
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ia_common"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

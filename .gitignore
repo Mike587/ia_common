@@ -1,0 +1,17 @@
+# pixi environment (regenerated from pixi.toml / pixi.lock)
+.pixi/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# scratch output
+scratch/
+
+# example/scratch images from the scope (the ones tests need are copied to tests/data)
+Example_Images/
+
+# unpublished sample images (collaborator data); tests skip without them
+tests/data_private/
+
+# maintainer notes, local only
+TODO.md

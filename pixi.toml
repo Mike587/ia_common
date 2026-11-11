@@ -1,0 +1,20 @@
+[workspace]
+name = "ia_common"
+authors = ["Mike Stebler <mstebler@ethz.ch>"]
+channels = ["conda-forge"]
+platforms = ["win-64"]
+version = "0.1.0"
+license = "MIT"
+license-file = "LICENSE"
+
+[dependencies]
+python = "3.12.*"
+numpy = ">=2"
+matplotlib = ">=3.9"
+pytest = ">=8"
+
+[pypi-dependencies]
+ia_common = { path = ".", editable = true }
+
+[tasks]
+test = "pytest -q"
