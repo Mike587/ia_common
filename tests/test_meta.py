@@ -59,3 +59,56 @@ def test_missing_or_nonsquare_scaling_raises():
                                            '<Distance Id="Y"><Value>3E-07')
     with pytest.raises(meta.MetadataError):
         meta.pixel_size_m(meta.parse(bad))
+
+
+# --- sample_carrier ------------------------------------------------------
+# Trimmed from a Marc_SM_002 .czexp: an insert slide (the file records only the slide).
+INSERT_XML = """<ImageDocument><Metadata><Experiment><SampleHolder>
+    <Template Name="Chamber Slide 8x - 76 x 26 mm - Vertical">
+      <AnchorPoint>0,0</AnchorPoint><BoundsSize>26000,76000</BoundsSize>
+      <Category>Multichamber</Category><ShapeType>Rectangle</ShapeType>
+      <ShapeColumns>2</ShapeColumns><ShapeRows>4</ShapeRows>
+      <ShapeWidth>9500</ShapeWidth><ShapeHeight>10600</ShapeHeight>
+      <ShapeDistanceX>10900</ShapeDistanceX><ShapeDistanceY>12100</ShapeDistanceY>
+      <BottomMaterial>Glass</BottomMaterial><BottomThickness>186</BottomThickness>
+      <BottomOffsetMeasured>NaN</BottomOffsetMeasured>
+      <InsertType>PartOfInsert</InsertType><PartOfInsertName></PartOfInsertName>
+    </Template></SampleHolder></Experiment></Metadata></ImageDocument>"""
+
+
+def test_sample_carrier_insert_records_only_the_slide():
+    c = meta.sample_carrier(meta.parse(INSERT_XML))
+    assert c["name"] == "Chamber Slide 8x - 76 x 26 mm - Vertical"
+    assert (c["rows"], c["columns"]) == (4, 2)
+    assert c["well_width_m"] == pytest.approx(9.5e-3)           # µm in the file → m
+    assert c["pitch_y_m"] == pytest.approx(12.1e-3)
+    assert c["bounds_size_m"] == pytest.approx((0.026, 0.076))
+    assert c["bottom_thickness_m"] == pytest.approx(186e-6)
+    assert c["is_part_of_insert"] is True and c["part_of_insert_name"] is None
+
+
+def test_sample_carrier_falls_back_to_czsht_copy():
+    xml = """<X><ScanAreaSampleHolderInfo><Template Name="Multiwell 96.czsht">
+      <ShapeRows>8</ShapeRows></Template></ScanAreaSampleHolderInfo></X>"""
+    c = meta.sample_carrier(meta.parse(xml))
+    assert c["name"] == "Multiwell 96" and c["rows"] == 8
+    assert c["pitch_x_m"] is None                               # missing tag → None
+
+
+def test_sample_carrier_conflict_warns_and_prefers_sampleholder(caplog):
+    xml = """<X><SampleHolder><Template Name="Multiwell 96" /></SampleHolder>
+      <ScanAreaSampleHolderInfo><Template Name="Multichamber 384.czsht" /></ScanAreaSampleHolderInfo></X>"""
+    c = meta.sample_carrier(meta.parse(xml))
+    assert c["name"] == "Multiwell 96"
+    assert "more than one sample carrier" in caplog.text
+
+
+def test_sample_carrier_none_without_template():
+    assert meta.sample_carrier(meta.parse("<X><SampleHolder/></X>")) is None
+
+
+def test_sample_carrier_from_a_real_czi(data):
+    from pylibCZIrw import czi as pyczi
+    with pyczi.open_czi(str(data / "WF_PartialChip_off_centered.czi")) as d:
+        c = meta.sample_carrier(meta.parse(d.raw_metadata))
+    assert c["name"] == "Slide 76 x 26 mm - Vertical"

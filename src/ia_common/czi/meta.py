@@ -22,6 +22,7 @@ Positions — which one to trust (checked on the CD7, 2026-09-30):
 
 from __future__ import annotations
 
+import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
@@ -170,3 +171,89 @@ def z_relative_m(root: ET.Element, n_z: int | None = None) -> np.ndarray:
 def z_step_m(root: ET.Element) -> float | None:
     inc = root.findtext(".//Information/Image/Dimensions/Z/Positions/Interval/Increment")
     return None if inc is None else float(inc) * 1e-6
+
+
+# --------------------------------------------------------------------------
+# Sample carrier (moved from SmartMic MS_metadata, 2026-11-11)
+# --------------------------------------------------------------------------
+_CARRIER_TEMPLATE_PARENTS = ("SampleHolder", "ScanAreaSampleHolderInfo")
+
+
+def _strip_czsht(name: str) -> str:
+    return name[:-6] if name.lower().endswith(".czsht") else name
+
+
+def sample_carrier(root: ET.Element) -> dict | None:
+    """The sample carrier the CZI was acquired with (``SampleHolder/Template``).
+
+    Prefers the experiment's own ``SampleHolder/Template``, else the
+    ``ScanAreaSampleHolderInfo`` copy (``.czsht`` suffix dropped); logs a
+    warning if the file names more than one carrier. Informative: any value may
+    be None; None if there is no Template.
+
+    Keys: ``name``, ``category``, ``shape_type``, ``rows``, ``columns``,
+    ``well_width_m``, ``well_height_m``, ``pitch_x_m``/``pitch_y_m`` (centre to
+    centre), ``bounds_size_m`` / ``anchor_point_m`` as ``(x, y)``,
+    ``bottom_material``, ``bottom_thickness_m``, ``insert_type``
+    (``"Default"``/``"PartOfInsert"``), ``part_of_insert_name``,
+    ``is_part_of_insert``. Lengths in metres (µm in the file).
+
+    CAUTION, inserts: for an insert holding slides the file records only the
+    ONE SLIDE (``is_part_of_insert`` True), neither the insert's name nor the
+    slot, so ``name`` matches ZEN's carrier name only for a plate. SmartMic's
+    ``MS_metadata.check_sample_carrier`` compares such a dict with the expected
+    carrier.
+    """
+    found = [(parent.tag, child) for parent in root.iter() for child in parent
+             if child.tag == "Template" and parent.tag in _CARRIER_TEMPLATE_PARENTS]
+    if not found:
+        return None
+    tmpl = next((t for p, t in found if p == "SampleHolder"), found[0][1])
+    names = {_strip_czsht(t.get("Name", "")) for _, t in found}
+    if len(names) > 1:
+        logging.getLogger(__name__).warning(
+            f"more than one sample carrier ({', '.join(sorted(names))}); "
+            f"using '{_strip_czsht(tmpl.get('Name', ''))}'.")
+
+    def _float(tag):
+        try:
+            v = float(tmpl.findtext(tag))
+        except (TypeError, ValueError):
+            return None
+        return None if v != v else v            # NaN → None
+
+    def _m(tag):                                 # µm → m
+        v = _float(tag)
+        return None if v is None else v * 1e-6
+
+    def _pair_m(tag):                            # "x,y" µm → m
+        try:
+            x, y = (float(v) * 1e-6 for v in tmpl.findtext(tag).split(","))
+        except (AttributeError, TypeError, ValueError):
+            return None
+        return (x, y)
+
+    def _text(tag):
+        t = tmpl.findtext(tag)
+        return t.strip() if t and t.strip() else None
+
+    rows, cols = _float("ShapeRows"), _float("ShapeColumns")
+    insert_type = _text("InsertType")
+    return {
+        "name": _strip_czsht(tmpl.get("Name", "")),
+        "category": _text("Category"),
+        "shape_type": _text("ShapeType"),
+        "rows": None if rows is None else int(rows),
+        "columns": None if cols is None else int(cols),
+        "well_width_m": _m("ShapeWidth"),
+        "well_height_m": _m("ShapeHeight"),
+        "pitch_x_m": _m("ShapeDistanceX"),
+        "pitch_y_m": _m("ShapeDistanceY"),
+        "bounds_size_m": _pair_m("BoundsSize"),
+        "anchor_point_m": _pair_m("AnchorPoint"),
+        "bottom_material": _text("BottomMaterial"),
+        "bottom_thickness_m": _m("BottomThickness"),
+        "insert_type": insert_type,
+        "part_of_insert_name": _text("PartOfInsertName"),
+        "is_part_of_insert": insert_type == "PartOfInsert",
+    }
